@@ -11,6 +11,7 @@ import (
 	"sort"
 )
 
+// structure for ClusterRoles
 type Role struct {
 	APIVersion string       `json:"apiVersion"`
 	Kind       string       `json:"kind"`
@@ -33,6 +34,7 @@ type RoleRule struct {
 	Resources     []string `json:"resources"`
 	Verbs         []string `json:"verbs"`
 }
+
 
 // Structure for sorting rules by APIGroup
 type SortByAPIGroup []RoleRule
@@ -134,64 +136,44 @@ func isSystemRole(roleName string, prefixes []string) bool {
 	return false
 }
 
+
 func displayUsage() {
-	fmt.Println("Usage:")
-	fmt.Println("./rbac-tool --table clusterrole       Display cluster roles in a table format.")
-	fmt.Println("./rbac-tool --table clusterrole --nosys  Display cluster roles in a table format excluding default system Cluster Roles.")
-	fmt.Println("./rbac-tool --verbs                   Display all available verbs from api-resources.")
+    fmt.Println("Usage:")
+    fmt.Println("./rbac-tool --table clusterrole       Display cluster roles in a table format.")
+    fmt.Println("./rbac-tool --table clusterrole --nosys  Display cluster roles in a table format excluding default system Cluster Roles.")
+    fmt.Println("./rbac-tool --verbs                   Display all available verbs from api-resources.")
 }
 
-func main() {
-	systemPrefixes := []string{"system:", "kubeadm:", "calico"} 
+func displayBuiltInVerbs() {
+    cmd := exec.Command("sh", "-c", "kubectl api-resources --no-headers --sort-by name -o wide | sed 's/.*\\[//g' | tr -d \"]\" | tr \" \" \"\\n\" | sort | uniq")
+    output, err := cmd.Output()
+    if err != nil {
+        fmt.Println("Error executing the command:", err)
+        return
+    }
+	fmt.Println("[ Available Built-in default Verbs ]")
+    fmt.Println(string(output))
+}
 
-	var tableOption string
-	var excludeSystem bool
-	var verbsOption bool
-	flag.StringVar(&tableOption, "table", "", "Display roles in a table format (use 'clusterrole')")
-	flag.BoolVar(&excludeSystem, "nosys", false, "Exclude default system Cluster Roles")
-	flag.BoolVar(&verbsOption, "verbs", false, "Display all available verbs from api-resources")
-	flag.Parse()
+
+// 여기에 clusterrole을 보여주는 로직을 넣습니다.
+func displayClusterRoles(excludeSystem bool, systemPrefixes []string) {
 	
-	
-	if tableOption == "" {
-        	displayUsage()
-	        return
-	    }
+	cmd := exec.Command("kubectl", "get", "clusterroles", "-o", "json")
+    output, err := cmd.Output()
+    if err != nil {
+        fmt.Println("Error executing the command:", err)
+        return
+    }
 
+    var rolesList struct {
+        Items []Role `json:"items"`
+    }
 
-	output, err := exec.Command("kubectl", "get", "clusterroles", "-o", "json").Output()
-	if err != nil {
-		panic(err)
-	}
-
-	if tableOption == "" {
-		displayUsage()
-		return
-	}
-
-	if tableOption != "clusterrole" {
-		fmt.Println("Invalid table option. Expected 'clusterrole'.")
-		return
-	}
-	if verbsOption {
-		cmd := exec.Command("sh", "-c", "kubectl api-resources --no-headers --sort-by name -o wide | sed 's/.*\\[//g' | tr -d \"]\" | tr \" \" \"\\n\" | sort | uniq")
-		output, err := cmd.Output()
-		if err != nil {
-			fmt.Println("Error executing the command:", err)
-			return
-		}
-		fmt.Println(string(output))
-		return
-	}
-
-	var rolesList struct {
-	    Items []Role `json:"items"`
-	}
-
-	err = json.Unmarshal(output, &rolesList)
-	if err != nil {
-		panic(err)
-	}
+    err = json.Unmarshal(output, &rolesList)
+    if err != nil {
+        panic(err)
+    }
 
 	//sort apiGroups, and merge Verbs
 	for i := range rolesList.Items {
@@ -227,4 +209,31 @@ func main() {
 
 	w.Flush()
 }
+
+
+func main() {
+    systemPrefixes := []string{"system:", "kubeadm:", "calico"}
+
+    var tableOption string
+    var excludeSystem bool
+    var verbsOption bool
+    flag.StringVar(&tableOption, "table", "", "Display roles in a table format (use 'clusterrole')")
+    flag.BoolVar(&excludeSystem, "nosys", false, "Exclude default system Cluster Roles")
+    flag.BoolVar(&verbsOption, "verbs", false, "Display all available built-in verbs from api-resources")
+    flag.Parse()
+
+    if verbsOption {
+        displayBuiltInVerbs()
+        return
+    }
+
+    switch tableOption {
+    case "clusterrole":
+        displayClusterRoles(excludeSystem, systemPrefixes)
+    default:
+        displayUsage()
+    }
+}
+
+
 
